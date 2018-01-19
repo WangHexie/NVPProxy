@@ -50,17 +50,26 @@ def closeSocks(socks,sourceAddress,destineyAddress):
 # have to handle the situation there is no read while delete or  the opposite
 
 
-
-def handle_tcp(sock,sourceAddr,destineyAddress):
+def handle_tcp(sock,sourceAddr,destineyAddress):        #some problems here no idea how to solve
     try:
-        fdset = [sock]
+        udpSocks = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        fdset = [sock,udpSocks]
         while True:
             r, w, e = select.select(fdset, [], [])
             if sock in r:
                 data = sock.recv(4096)
+                print(data)
                 if len(data) <= 0:
                     break
-                result = udpSender(data,sourceAddr,1)
+                result = udpSend(udpSocks,udpDataCreate(data,destineyAddress,1,0))
+                if result < len(data):
+                    raise Exception('failed to send all data')
+            if udpSocks in r :
+                data = udpSocks.recv(4096)
+                print(data)
+                if len(data) <= 0:
+                    break
+                sock.send(data[10:])
                 if result < len(data):
                     raise Exception('failed to send all data')
     finally:
@@ -89,28 +98,58 @@ protocol type:
 0: defalt
 '''
 
-# udp sender  fomat is down there ; if connetion is good data part is 1 else = 1
-def udpSender(data, sourceAddr,destineyAddress,mode):           #ipv6 have to change this
-    addressType = b'0'
+'''
+# udp sender  fomat is down there ; 
+-----------------------------------------------
+if connetion is good data part is 1 else = 0
+_______________________________________________
+'''
+
+
+def udpSender(data, sourceAddr, destineyAddress, mode, addressTypeP):  # ipv6 have to change this
+    # change methode name serveraddr is not proprite
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # here  ipv6
+    data = udpDataCreate(data, destineyAddress, mode, addressTypeP)
+    udpSend(s, data, sourceAddr)
+    return s
+
+
+def udpDataCreate(data, destineyAddress, mode, addressTypeP):
     protocolType = b'0'
+    if addressTypeP == 0:
+        addressType = b'0'
+    elif addressTypeP == 1:
+        addressType = b'1'
+    elif addressTypeP == 2:
+        addressType = b'2'
+
     if mode == 0:
-        modePart=b'0'
+        modePart = b'0'
     elif mode == 1:
         modePart = b'1'
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  #here  ipv6
-    IpAdress = socket.inet_aton(destineyAddress[0])
+    if addressTypeP == 0:
+        IpAdress = socket.inet_aton(destineyAddress[0].decode("utf-8"))
+    elif addressTypeP == 1:
+        IpAdress = destineyAddress[0]
     port = port_to_hex_string(destineyAddress[1])
-    s.sendto(sourceAddr, modePart + addressType + IpAdress + port + protocolType+data)
-    s.close()
-    return s
+    if data == None:
+        return modePart + addressType + IpAdress + port + protocolType
+    return modePart + addressType + IpAdress + port + protocolType + data
+
+
+def udpSend(socks, data, serverAddr):
+    socks.sendto(data, serverAddr)
 
 
  # udp receiver
 def udpReceiver():
+    print('1')
     udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udpSock.bind(('127.0.0.1', localPort))
+    udpSock.bind(('0.0.0.0', localPort))
     while True:
-        data, addr = udpSock.recvfrom(4096)
+        data, addr = udpSock.recv(4096)
+        print('166165165165')
+        print(data)
         print('Received from %s:%s.' % addr)
         t = threading.Thread(target=udpDataHandler, args=(data, addr))
         t.start()
@@ -132,7 +171,7 @@ def udpDataHandler(data,sourceAddr):
             except:
                 return udpSender(b'0',sourceAddr,destineyAddress,0)
             finally:
-                udpSender(b'1',sourceAddr,destineyAddress,0)
+                udpSocks = udpSender(b'1',sourceAddr,destineyAddress,0)
         elif data[1] == 1:
             try:
                 desIpAddress = socket.gethostbyname(data[2:-3])                          #ipv6 support need to change this
@@ -141,9 +180,10 @@ def udpDataHandler(data,sourceAddr):
                 addSocksList(s,sourceAddr,desIpAddress)
 
             except:
-                return udpSender(b'0', sourceAddr,desIpAddress, 0)
+                udpSocks = udpSender(b'0' + data[2:-3], sourceAddr, desIpAddress, 0)
+                return udpSocks.close()
             finally:
-                udpSender(b'1', sourceAddr,desIpAddress, 0)
+                udpSocks = udpSender(b'1'+data[2:-3], sourceAddr,desIpAddress, 0)
         elif data[1] == 2:
             try:
                 s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
@@ -151,9 +191,10 @@ def udpDataHandler(data,sourceAddr):
                 s.connect(destineyAddress)
                 addSocksList(s,sourceAddr,destineyAddress)
             except:
-                return udpSender(b'0', sourceAddr, destineyAddress,0)
+                udpSocks = udpSender(b'0', sourceAddr, destineyAddress,0)
+                return udpSocks.close()
             finally:
-                udpSender(b'1', sourceAddr, destineyAddress,0)
+                udpSocks = udpSender(b'1', sourceAddr, destineyAddress,0)
     elif data[0] == 1:
         if data[1] == 0:
             try:
