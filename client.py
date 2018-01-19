@@ -38,40 +38,51 @@ def addSocksList(socks,sourceAdress,destineyAddress):
 
 #sockethandler
 def sockHandler(sock, sourceAddress):
-    data = sock.recv(4096)                    #this hasn't been used for the reason down there
+    data = sock.recv(1024)                    #this hasn't been used for the reason down there
+    print('Data i think useless')
+    print(data)
+    if data != b'\x05\x01\x00':
+        sock.close()
+        return
     print(str(sourceAddress))
     sock.send(b'\x05\x00')                 #other situation is out of my ability and since i have no problem in using it .
-    addressRecv = sock.recv(4096)
+    addressRecv = sock.recv(1024)
 #get  adrress
     try:
+        '''
+        if addressRecv ==b'':
+            sock.close()
+            return
+        '''
         addrtype = addressRecv[3]
         if addrtype == 1:
+            print(addressRecv[5:-2])
             addr = socket.inet_ntoa(addressRecv[5:-2])
             port = addressRecv[-2] * 256 + addressRecv[-1]
-            udpSock = udpSender(None,sourceAddress,(addr,port),0,0)
+            udpSock = udpSender(None,server,(addr,port),0,0)
         elif addrtype == 3:
             addr = addressRecv[5:-2]
             port = addressRecv[-2] * 256 + addressRecv[-1]
-            udpSock = udpSender(None, sourceAddress, (addr,port), 0, 1)
+            udpSock = udpSender(None, server, (addr,port), 0, 1)
         elif addrtype == 4:                                              #socke type have to change to support ipv6
             addr = socket.inet_ntop(socket.AF_INET6, addressRecv[5:-2])
             port = addressRecv[-2] * 256 + addressRecv[-1]
-            udpSock = udpSender(None, sourceAddress, (addr,port), 0, 2)
+            udpSock = udpSender(None, server, (addr,port), 0, 2)
         else:
             # not support
             print('addr_type not support')
             return
 
-        addSocksList(sock, sourceAddress, addr)
+        addSocksList(sock, sourceAddress,( addr,port))
         data = udpSock.recv(4096)
         if data[1] == 0:
-            connectionReport(sock,data[-1],sourceAddress, addr)
+            connectionReport(sock,data[-1],sourceAddress, ( addr,port))
         elif data[1] == 1:
             addr = socket.inet_ntoa(data[-4:])
-            addSocksList(sock, sourceAddress, addr)
-            connectionReport(sock, data[-1], sourceAddress, addr)
+            addSocksList(sock, sourceAddress, ( addr,port))
+            connectionReport(sock, data[-1], sourceAddress, ( addr,port))
 
-        handle_tcp(sock,udpSock,addr)
+        handle_tcp(sock,udpSock,( addr,port))
 
     finally:
         print('????')
@@ -114,11 +125,11 @@ def connectionReport(sock,result,sourceAddress, addr):
     server_hex_port = port_to_hex_string(sock_name[1])
     print(server_hex_port)
     if result == 1:
-        sock = findSocks(sourceAddress, addr)
+        #sock = findSocks(sourceAddress, addr)
         sock.send(b'\x05\x04\x00\x01' + server_hex_addr + server_hex_port)
         return  sock
     else:
-        sock = findSocks(sourceAddress, addr)
+        #sock = findSocks(sourceAddress, addr)
         sock.send(b'\x05\x00\x00\x01'+server_hex_addr+server_hex_port)
         return sock
 
@@ -176,20 +187,20 @@ def udpSender(data, serverAddr,destineyAddress,mode,addressTypeP):           #ip
 
 
 def udpDataCreate(data,destineyAddress,mode,addressTypeP):
-    protocolType = b'0'
+    protocolType = b'\x00'
     if addressTypeP == 0:
-        addressType = b'0'
+        addressType = b'\x00'
     elif addressTypeP == 1:
-        addressType = b'1'
+        addressType = b'\x01'
     elif addressTypeP == 2:
-        addressType = b'2'
+        addressType = b'\x02'
 
     if mode == 0:
-        modePart = b'0'
+        modePart = b'\x00'
     elif mode == 1:
-        modePart = b'1'
+        modePart = b'\x01'
     if addressTypeP == 0:
-        IpAdress = socket.inet_aton(destineyAddress[0].decode("utf-8"))
+        IpAdress = socket.inet_aton(destineyAddress[0])
     elif addressTypeP == 1:
         IpAdress = destineyAddress[0]
     port = port_to_hex_string(destineyAddress[1])
@@ -203,36 +214,37 @@ def udpSend(socks,data,serverAddr):
 def udpDataHandler(data,sourceAddr):
     if data[0] == 0:
         if data[1] == 0:
+            destineyAddress = (socket.inet_ntoa(data[2:6]), hex_string_to_port(data[6:8]))
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                destineyAddress = (socket.inet_ntoa(data[2:6]) ,hex_string_to_port(data[6:8]) )
+
                 s.connect(destineyAddress)
                 addSocksList(s,sourceAddr,destineyAddress)
             except:
-                return udpSender(b'0',sourceAddr,destineyAddress,0)
+                return udpSender(b'\x00',sourceAddr,destineyAddress,0)
             finally:
-                udpSender(b'1',sourceAddr,destineyAddress,0)
+                udpSender(b'\x01',sourceAddr,destineyAddress,0)
         elif data[1] == 1:
+            desIpAddress = (socket.gethostbyname(data[2:-3]), hex_string_to_port(data[-3:-1]))  # ipv6 support need to change this
             try:
-                desIpAddress = socket.gethostbyname(data[2:-3])                          #ipv6 support need to change this
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.connect((desIpAddress, hex_string_to_port(data[-2:-1])))
                 addSocksList(s,sourceAddr,desIpAddress)
 
             except:
-                return udpSender(b'0', sourceAddr,desIpAddress, 0)
+                return udpSender(b'\x00', sourceAddr,desIpAddress, 0)
             finally:
-                udpSender(b'1', sourceAddr,desIpAddress, 0)
+                udpSender(b'\x01', sourceAddr,desIpAddress, 0)
         elif data[1] == 2:
+            destineyAddress = (socket.inet_ntoa(data[2:-3]), hex_string_to_port(data[-2:-1]))
             try:
                 s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-                destineyAddress = (socket.inet_ntoa(data[2:-3]), hex_string_to_port(data[-2:-1]))
                 s.connect(destineyAddress)
                 addSocksList(s,sourceAddr,destineyAddress)
             except:
-                return udpSender(b'0', sourceAddr, destineyAddress,0)
+                return udpSender(b'\x00', sourceAddr, destineyAddress,0)
             finally:
-                udpSender(b'1', sourceAddr, destineyAddress,0)
+                udpSender(b'\x01', sourceAddr, destineyAddress,0)
     elif data[0] == 1:
         if data[1] == 0:
             try:
