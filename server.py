@@ -44,6 +44,9 @@ def delSocks(sourceAdress,destineyAddress):
 def closeSocks(socks,sourceAddress,destineyAddress):
     socks.close()
     delSocks(sourceAddress,destineyAddress)
+
+def addSocksList(socks,sourceAdress,destineyAddress):
+    socksList[(sourceAdress,destineyAddress)]=socks
 # delete address after 100s
 
 # find adress -return  corrosponding address
@@ -51,36 +54,27 @@ def closeSocks(socks,sourceAddress,destineyAddress):
 
 
 def handle_tcp(sock,sourceAddr,destineyAddress):        #some problems here no idea how to solve
-    try:
-        udpSocks = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        fdset = [sock,udpSocks]
+        udpSocks = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        fdset = [sock]
         while True:
             r, w, e = select.select(fdset, [], [])
             if sock in r:
                 data = sock.recv(4096)
                 print('tcpdata')
                 print(data)
-                if len(data) <= 0:
-                    break
-                result = udpSend(udpSocks,udpDataCreate(data,destineyAddress,1,0))
-                if result < len(data):
-                    raise Exception('failed to send all data')
-            if udpSocks in r :
-                data = udpSocks.recv(4096)
-                print('udpdata')
-                print(data)
-                if len(data) <= 0:
-                    break
-                sock.send(data[10:])
-                if result < len(data):
-                    raise Exception('failed to send all data')
-    finally:
-        udpSocks.close()
-        sock.close()
-        closeSocks(sock,sourceAddr,destineyAddress)
+                if len(data) > 0:
+                    udpSocks = udpSend(udpSocks,udpDataCreate(data,destineyAddress,1,0),sourceAddr)
+                else:
 
-def addSocksList(socks,sourceAdress,destineyAddress):
-    socksList[(sourceAdress,destineyAddress)]=socks
+                    sock.close()
+                    print('im done')
+                    break
+
+            if sock in e:
+                sock.close()
+
+
+
 
 '''
 udp data format 
@@ -145,7 +139,7 @@ def udpDataCreate(data, destineyAddress, mode, addressTypeP):
 
 def udpSend(socks, data, serverAddr):
     socks.sendto(data, serverAddr)
-
+    return socks
 
  # udp receiver
 def udpReceiver():
@@ -153,7 +147,7 @@ def udpReceiver():
     udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udpSock.bind(('0.0.0.0', localPort))
     while True:
-        data, addr = udpSock.recvfrom(4096)
+        data, addr = udpSock.recvfrom(8192)
         print(data)
         print('Received from %s:%s.' % addr)
         t = threading.Thread(target=udpDataHandler, args=(data, addr))
@@ -171,7 +165,6 @@ def udpDataHandler(data,sourceAddr):
             destineyAddress = (socket.inet_ntoa(data[2:6]), hex_string_to_port(data[6:8]))
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
                 print('address ddfa')
                 print(data[2:6])
                 s.connect(destineyAddress)
@@ -188,7 +181,7 @@ def udpDataHandler(data,sourceAddr):
             try:
                 print(desIpAddress)
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.connect((desIpAddress, hex_string_to_port(data[-3:-1])))
+                s.connect(desIpAddress)
                 addSocksList(s,sourceAddr,desIpAddress)
 
             except:
@@ -215,8 +208,7 @@ def udpDataHandler(data,sourceAddr):
                 if s == None:
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.connect((socket.inet_ntoa(data[2:6]), hex_string_to_port(data[6:8])))
-                s.send(data[8:])
-
+                s.send(data[9:])
                 handle_tcp(s,sourceAddr,(socket.inet_ntoa(data[2:6]), hex_string_to_port(data[6:8])))
             except:
                 return
