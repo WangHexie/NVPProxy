@@ -7,6 +7,7 @@ localsock = 1081
 listenNumber = 1500
 socksList = {}
 server = ('127.0.0.1',8621)
+bufferSize = 65535
 
 def tcpServer():
     socketserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -17,23 +18,6 @@ def tcpServer():
         print(str(addr)+'connect')
         t = threading.Thread(target=sockHandler, args=(sock, addr))
         t.start()
-
-
-# delete address after 100s
-def findSocks(sourceAdress,destineyAddress):
-    return socksList[(sourceAdress,destineyAddress)]
-
-def delSocks(sourceAdress,destineyAddress):
-    socksList[(sourceAdress,destineyAddress)]=None
-
-def closeSocks(socks,sourceAddress,destineyAddress):
-    socks.close()
-    delSocks(sourceAddress,destineyAddress)
-def addSocksList(socks,sourceAdress,destineyAddress):
-    socksList[(sourceAdress,destineyAddress)]=socks
-# delete address after 100s
-# find adress -return  corrosponding address
-# have to handle the situation there is no read while delete or  the opposite
 
 #sockethandler
 def sockHandler(sock, sourceAddress):
@@ -64,26 +48,26 @@ def sockHandler(sock, sourceAddress):
             addr = socket.inet_ntoa(addressRecv[5:9])
             print('string address')
             port = addressRecv[-2] * 256 + addressRecv[-1]
-            udpSock = udpSender(None,server,(addr,port),0,0)
+            tcpSock = tcpSender(None,server,(addr,port),0,0)
         elif addrtype == 3:
             print('hostname address')
             print(addressRecv[5:-2])
             addr = addressRecv[5:-2]
             port = addressRecv[-2] * 256 + addressRecv[-1]
             print(port)
-            udpSock = udpSender(None, server, (addr,port), 0, 1)
+            tcpSock = tcpSender(None, server, (addr,port), 0, 1)
         elif addrtype == 4:                                              #socke type have to change to support ipv6
             print('ípv6')
             addr = socket.inet_ntop(socket.AF_INET6, addressRecv[5:-2])
             port = addressRecv[-2] * 256 + addressRecv[-1]
-            udpSock = udpSender(None, server, (addr,port), 0, 2)
+            tcpSock = tcpSender(None, server, (addr,port), 0, 2)
         else:
             # not support
             print('addr_type not support')
             return
 
       #  addSocksList(sock, sourceAddress,( addr,port))
-        data = udpSock.recv(4096)
+        data = tcpSock.recv(4096)
         print('connection report')
         print(data)
         if data[1] == 0:
@@ -102,8 +86,7 @@ def sockHandler(sock, sourceAddress):
                 print(data[9])
         else:
             print('wrong wrong')
-        addSocksList(sock,sourceAddress,( addr,port))
-        handle_tcp(sock,udpSock,( addr,port))
+        handle_tcp(sock,tcpSock,( addr,port))
 
     finally:
         print('????')
@@ -126,19 +109,20 @@ def handle_tcp(sock, remote,destineyAddress):
         while True:
             r, w, e = select.select(fdset, [], [])
             if sock in r:
-                data = sock.recv(4096)
+
+                data = sock.recv(bufferSize)
+
                 if len(data) <= 0:
                     break
-                remote = udpSend(remote,udpDataCreate(data,destineyAddress,1,0),server)
-            k=0
-            bufferSize = 65507
-
-            data = remote.recv(bufferSize)
-            #data = remote.recvmsg(4096)
-            print('get from server')
-            print(data)
-            if len(data)>0:
-                sock.send(data[10:0])
+                remote = tcpSend(remote,DataCreate(data,destineyAddress,1,0))
+            if remote in r:
+                data = remote.recv(bufferSize)
+                print('get from server')
+                print(data)
+                if len(data)>0:
+                    sock.send(data[9:])
+                else:
+                    break
     finally:
         sock.close()
         remote.close()
@@ -206,15 +190,16 @@ protocol type:
 '''
 
 # udp sender  fomat is down there ; if connetion is good data part is 1 else = 1
-def udpSender(data, serverAddr,destineyAddress,mode,addressTypeP):           #ipv6 have to change this
+def tcpSender(data, serverAddr,destineyAddress,mode,addressTypeP):           #ipv6 have to change this
                                                                             #change methode name serveraddr is not proprite
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  #here  ipv6
-    data = udpDataCreate(data, destineyAddress,mode,addressTypeP)
-    udpSend(s,data, serverAddr)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  #here  ipv6
+    s.connect(serverAddr)
+    data = DataCreate(data, destineyAddress,mode,addressTypeP)
+    tcpSend(s,data)
     return s
 
 
-def udpDataCreate(data,destineyAddress,mode,addressTypeP):
+def DataCreate(data,destineyAddress,mode,addressTypeP):
     protocolType = b'\x00'
     if addressTypeP == 0:
         addressType = b'\x00'
@@ -235,8 +220,8 @@ def udpDataCreate(data,destineyAddress,mode,addressTypeP):
         return modePart + addressType + IpAdress + port + protocolType
     return  modePart + addressType + IpAdress + port + protocolType + data
 
-def udpSend(socks,data,serverAddr):
-    socks.sendto(data,serverAddr)
+def tcpSend(socks,data):
+    socks.send(data)
     return socks
 
 # decrypt
