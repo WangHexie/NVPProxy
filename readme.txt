@@ -1,1 +1,1 @@
-use some code from shadowsocks to speed up 
+a small proxy for fun
